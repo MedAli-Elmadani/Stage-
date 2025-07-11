@@ -14,7 +14,7 @@ embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 # Chat completion client (used for generating natural language responses)
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key="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",
+    api_key="",
 )
 from flask import send_file
 from PIL import Image, ImageDraw, ImageFont
