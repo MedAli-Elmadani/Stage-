@@ -1,0 +1,176 @@
+import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import './App.css';
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
+  iconUrl: require('leaflet/dist/images/marker-icon.png'),
+  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+});
+
+// Helper function to convert file to base64 (without prefix)
+const toBase64 = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64String = reader.result.split(',')[1]; // remove "data:image/...;base64,"
+      resolve(base64String);
+    };
+    reader.onerror = (error) => reject(error);
+  });
+
+function App() {
+  const [projects, setProjects] = useState([]);
+  const [selectedProject, setSelectedProject] = useState('');
+  const [image, setImage] = useState(null);
+  const [result, setResult] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch('http://10.100.3.204:5000/projects')
+      .then(response => response.json())
+      .then(data => {
+        setProjects(data);
+        if (data.length > 0) {
+          setSelectedProject(data[0].id.toString());
+        }
+      })
+      .catch(error => console.error('Error fetching projects:', error));
+  }, []);
+
+  const handleImageChange = (event) => {
+    setImage(event.target.files[0]);
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedProject || !image) {
+      alert('Veuillez choisir un projet et une image.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('project_id', selectedProject);
+    formData.append('image', image);
+
+    setLoading(true);
+    setResult('');
+
+    try {
+      const response = await fetch('http://10.100.3.204:5000/analyze', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setResult(data.result);
+      } else {
+        alert('Erreur: ' + (data.error || 'Une erreur est survenue.'));
+      }
+    } catch (error) {
+      console.error('Erreur de connexion au serveur:', error);
+      alert('Impossible de contacter le serveur.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!image) {
+      alert('Veuillez sélectionner une image avant de sauvegarder.');
+      return;
+    }
+    try {
+      const base64Image = await toBase64(image);
+
+      const response = await fetch('http://10.100.3.204:5000/save_result', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          project_id: selectedProject,
+          result: result,
+          image_base64: base64Image,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert('Résultat sauvegardé avec succès !');
+      } else {
+        alert('Erreur lors de la sauvegarde: ' + (data.error || 'Erreur inconnue'));
+      }
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde:', error);
+      alert('Erreur de connexion au serveur.');
+    }
+  };
+
+  return (
+    <div className="container">
+      <img src="/al-omrane-logo.png" alt="Logo Al Omrane" className="logo" />
+      <h1>Contrôle de conformité</h1>
+
+      <label>Choisir un projet :</label>
+      <select value={selectedProject} onChange={(e) => setSelectedProject(e.target.value)}>
+        {projects.map((project) => (
+          <option key={project.id} value={project.id.toString()}>
+            {project.name}
+          </option>
+        ))}
+      </select>
+
+      <div style={{ height: '400px', marginTop: '1rem' }}>
+        <MapContainer center={[31.7917, -7.0926]} zoom={6} style={{ height: '100%', width: '100%' }}>
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="© OpenStreetMap contributors"
+          />
+          {projects.map(project => (
+            <Marker
+              key={project.id}
+              position={[project.latitude, project.longitude]}
+              eventHandlers={{
+                click: () => setSelectedProject(project.id.toString()),
+              }}
+            >
+              <Popup>
+                <strong>{project.name}</strong><br />
+                Cliquez pour sélectionner
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      </div>
+
+      <label>Choisir une image :</label>
+      <input type="file" accept="image/*" onChange={handleImageChange} />
+
+      <button onClick={handleSubmit} disabled={loading}>
+        {loading ? 'Analyse en cours...' : 'Analyser'}
+      </button>
+
+      {result && (
+        <div className="result">
+          <h3>Résultat :</h3>
+          <textarea
+            value={result}
+            onChange={(e) => setResult(e.target.value)}
+            rows={15}
+            style={{ width: '100%', fontSize: '1rem', padding: '0.5rem' }}
+          />
+          <button onClick={handleSave} style={{ marginTop: '0.5rem' }}>Sauvegarder</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
